@@ -1,5 +1,5 @@
 <template>
-  <div class="login-container">
+   <div class="login-container">
     <div class="login-box">
       <div class="header">
         <div class="title">{{ isLogin ? '欢迎回来' : '创建账户' }}</div>

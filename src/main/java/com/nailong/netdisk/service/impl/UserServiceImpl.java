@@ -76,6 +76,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return token;
     }
 
+
+
     public String getUserIdByToken(String token) {
         String key = "login:token:" + token;
         if (redisTemplate != null) {
