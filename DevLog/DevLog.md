@@ -56,8 +56,8 @@ const updateEmail = async () => {
 ```
 
 前端UI会显示当前用户的ID，并在更新时将此ID作为参数提交。这为攻击者提供了发现和利用漏洞的入口。
-[漏洞验证] ：![[attachments/Pasted image 20260109221048.png]]
+[漏洞验证] ：![](attachments/Pasted image 20260109221048.png)
 修改POST请求，成功验证
-![[attachments/Pasted image 20260109221142.png]]
+![](attachments/Pasted image 20260109221142.png)
 
 \=========================
