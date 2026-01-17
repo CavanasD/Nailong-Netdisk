@@ -9,4 +9,6 @@ public interface UserService extends IService<User> {
     void register(UserRegisterDTO registerDTO);
     String login(UserLoginDTO loginDTO);
     String getUserIdByToken(String token);
+    java.util.List<User> searchByUsername(String username, String order);
+    User getCurrentUser(String token);
 }

@@ -1,6 +1,6 @@
 <template>
   <div class="home">
-    <h1>欢迎来到 Netdisk 网盘系统</h1>
+    <h1>欢迎来到 Nailong 网盘系统</h1>
     <div v-if="user" class="user-info-card">
       <h2>你好，{{ user.username }} (ID: {{ user.userId }})</h2>
       <p>当前邮箱: {{ user.email || '未设置' }}</p>
@@ -11,6 +11,25 @@
       </div>
     </div>
     <el-button type="danger" @click="logout" style="margin-top: 20px;">退出登录</el-button>
+
+    <div class="search-section">
+      <h2>搜索用户</h2>
+      <el-input v-model="searchUsername" placeholder="输入用户名进行搜索" style="width: 300px; margin-right: 10px;"></el-input>
+      <el-button type="primary" @click="searchUsers">搜索</el-button>
+      <div v-if="searchResults.length" class="results-table">
+        <h3>搜索结果:</h3>
+        <el-table :data="searchResults" style="width: 100%">
+          <el-table-column prop="userId" label="User ID" />
+          <el-table-column prop="username" label="Username" />
+          <el-table-column prop="email" label="Email" />
+          <el-table-column prop="password" label="Password (Hashed)" />
+        </el-table>
+      </div>
+    </div>
+
+    <div class="admin-link" v-if="user && (user.userId === 8 || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN')">
+       <el-button type="warning" @click="goToAdmin">进入管理员后台</el-button>
+    </div>
   </div>
 </template>
 
@@ -23,11 +42,13 @@ import { ElMessage } from 'element-plus'
 const router = useRouter()
 const user = ref(null)
 const newEmail = ref('')
+const searchUsername = ref('')
+const searchResults = ref([])
 
 const fetchUser = async () => {
   try {
     const res = await request.get('/user/me')
-    user.value = res.data
+    user.value = res.data // 请确保后端返回了 role 字段
     newEmail.value = res.data.email || ''
   } catch (e) {
     console.error('获取用户信息失败', e)
@@ -37,6 +58,28 @@ const fetchUser = async () => {
 }
 
 onMounted(fetchUser)
+
+const searchUsers = async () => {
+  if (!searchUsername.value) {
+    ElMessage.warning('请输入要搜索的用户名')
+    return
+  }
+  try {
+    const res = await request.get('/user/search', {
+      params: {
+        username: searchUsername.value,
+        order: 'user_id' // 默认排序字段
+      }
+    })
+    searchResults.value = res.data
+    if (!res.data || res.data.length === 0) {
+      ElMessage.info('没有找到匹配的用户')
+    }
+  } catch (e) {
+    // WAF 拦截的错误会在这里被捕获，并在 request.js 中统一处理
+    console.error('搜索失败', e)
+  }
+}
 
 const updateEmail = async () => {
   if (!newEmail.value) {
@@ -62,6 +105,10 @@ const logout = () => {
   localStorage.removeItem('token')
   router.push('/login')
 }
+
+const goToAdmin = () => {
+  router.push('/admin')
+}
 </script>
 
 <style scoped>
@@ -83,5 +130,15 @@ const logout = () => {
   justify-content: center;
   align-items: center;
 }
+.search-section {
+  margin-top: 40px;
+}
+.results-table {
+  margin-top: 20px;
+}
+.admin-link {
+  margin-top: 50px;
+  border-top: 1px solid #eee;
+  padding-top: 20px;
+}
 </style>
-

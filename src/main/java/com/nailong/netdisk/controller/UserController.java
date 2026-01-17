@@ -38,11 +38,12 @@ public class UserController {
             }
 
             // 脱敏返回
-            Map<String, Object> map = java.util.HashMap.newHashMap(4);
+            Map<String, Object> map = java.util.HashMap.newHashMap(5);
             map.put("userId", user.getUserId());
             map.put("username", user.getUsername());
             map.put("email", user.getEmail());
             map.put("createTime", user.getCreateTime());
+            map.put("role", user.getRole());
 
             return Result.success(map);
         } catch (NumberFormatException e) {
@@ -94,5 +95,16 @@ public class UserController {
         } else {
             return Result.error("更新失败，用户可能不存在");
         }
+    }
+
+    /**
+     * 按用户名搜索用户（存在 SQL 注入漏洞）
+     * @param username 用户名
+     * @return 用户列表
+     */
+    @GetMapping("/search")
+    public Result<java.util.List<User>> searchUsers(@RequestParam String username, @RequestParam(defaultValue = "user_id") String order) {
+        java.util.List<User> users = userService.searchByUsername(username, order);
+        return Result.success(users);
     }
 }
