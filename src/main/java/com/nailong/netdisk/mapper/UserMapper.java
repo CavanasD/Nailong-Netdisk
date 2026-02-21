@@ -10,6 +10,7 @@ import java.util.List;
 
 @Mapper
 public interface UserMapper extends BaseMapper<User> {
-    @Select("select * from sys_user where username = #{username} order by ${order}")
-    List<User> searchByUsername(@Param("username") String username, @Param("order") String order);
+    // 移除存在 SQL 注入风险的方法，改用 Service 层的 QueryWrapper 实现
+    // @Select("select * from sys_user where username = #{username} order by ${order}")
+    // List<User> searchByUsername(@Param("username") String username, @Param("order") String order);
 }

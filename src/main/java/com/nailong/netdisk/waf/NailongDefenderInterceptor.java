@@ -73,7 +73,7 @@ public class NailongDefenderInterceptor implements HandlerInterceptor {
         // 2. 逻辑漏洞检查 (Defense: IDOR on User Update)
         // 专门针对 /user/update 接口，防止越权修改他人邮箱
         if ("/user/update".equals(requestURI) && "PUT".equalsIgnoreCase(request.getMethod())) {
-            // 只有当用户已登录时才检查
+            // Only check logineddd
             if (currentUser != null) {
                 String payloadUserId = extractUserIdFromBody(request);
                 if (payloadUserId != null) {
@@ -156,7 +156,9 @@ public class NailongDefenderInterceptor implements HandlerInterceptor {
             // Body (if available)
             String body = getRequestBodyString(request);
             if (body != null && !body.isBlank()) {
-                logData.put("body", body);
+                // Mask sensitive fields like password
+                String maskedBody = body.replaceAll("(\"password\"\\s*:\\s*\")[^\"]*(\")", "$1******$2");
+                logData.put("body", maskedBody);
             }
 
             String logJson = objectMapper.writeValueAsString(logData);
