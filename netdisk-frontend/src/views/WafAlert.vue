@@ -7,6 +7,13 @@
       <h2>NailongDefender已检测到潜在的威胁</h2>
       <p>您的请求已被拦截</p>
 
+      <div v-if="banned" class="ban-box ban-flash">
+        <div class="ban-icon">🚫</div>
+        <div class="ban-title">您的IP已被封禁</div>
+        <div class="ban-text">检测到异常行为，请立即停止不当操作。</div>
+        <div class="ban-text">解封倒计时：{{ remainSeconds }} 秒</div>
+      </div>
+
       <div class="info-grid">
         <div class="info-item">
           <span class="label">拦截ID：</span>
@@ -19,6 +26,11 @@
         <div class="info-item">
           <span class="label">风险类型:</span>
           <span class="value risk-name">{{ riskName }}</span>
+        </div>
+
+        <div v-if="details" class="info-item">
+          <span class="label">Details:</span>
+          <span class="value">{{ details }}</span>
         </div>
       </div>
 
@@ -33,18 +45,45 @@
 
 <script setup>
 import { useRouter, useRoute } from 'vue-router'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
 const secId = ref('')
 const userId = ref('')
 const riskName = ref('')
+const banned = ref(false)
+const details = ref('')
+const remainSeconds = ref(0)
+let timer = null
 
 onMounted(() => {
   secId.value = route.query.secId || 'Unknown'
   userId.value = route.query.userId || 'Unknown'
   riskName.value = route.query.riskName || 'HEUR/Unknown.Gen'
+
+  banned.value = String(route.query.banned || '').toLowerCase() === 'true'
+  details.value = route.query.details || ''
+
+  const rs = Number(route.query.remainSeconds || 0)
+  remainSeconds.value = Number.isFinite(rs) ? rs : 0
+
+  if (banned.value && remainSeconds.value > 0) {
+    timer = setInterval(() => {
+      remainSeconds.value = Math.max(0, remainSeconds.value - 1)
+      if (remainSeconds.value <= 0 && timer) {
+        clearInterval(timer)
+        timer = null
+      }
+    }, 1000)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
 })
 
 const goBack = () => {
@@ -156,6 +195,47 @@ p {
 .risk-name {
   color: #ffeb3b; /* 黄色高亮显示病毒名 */
   font-weight: bold;
+}
+
+.ban-box {
+  margin: 10px auto 22px;
+  max-width: 520px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.ban-icon {
+  font-size: 36px;
+  line-height: 1;
+  margin-bottom: 8px;
+  color: #fff;
+  user-select: none;
+}
+
+.ban-title {
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.6px;
+}
+
+.ban-text {
+  margin-top: 6px;
+  opacity: 0.95;
+}
+
+@keyframes banFlash {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.ban-flash {
+  animation: banFlash 0.9s ease-in-out infinite;
 }
 
 .back-btn {

@@ -26,7 +26,8 @@ public class SecurityAdminController {
     private UserService userService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-
+    
+    
     @GetMapping("/logs")
     @RequirePermission({"system:admin:access"})
     public Result<List<Map<String, Object>>> getSecurityLogs(@RequestHeader(value = "token", required = false) String token) {

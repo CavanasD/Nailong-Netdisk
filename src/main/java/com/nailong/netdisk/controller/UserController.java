@@ -5,7 +5,14 @@ import com.nailong.netdisk.dto.UserLoginDTO;
 import com.nailong.netdisk.dto.UserRegisterDTO;
 import com.nailong.netdisk.dto.UserUpdateDTO;
 import com.nailong.netdisk.entity.User;
+import com.nailong.netdisk.exception.WafBlockedException;
+import com.nailong.netdisk.service.CaptchaAttemptService;
+import com.nailong.netdisk.service.CaptchaService;
+import com.nailong.netdisk.service.LoginAttemptService;
 import com.nailong.netdisk.service.UserService;
+import com.nailong.netdisk.utils.SecurityUtil;
+import com.nailong.netdisk.waf.IpBanService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -27,8 +34,22 @@ import java.util.Map;
 @RequestMapping("/user")
 public class UserController {
 
+    private static final String BAN_RISK_NAME = "HEUR/Banned.IP.BadOperation";
+
     @Autowired
     private UserService userService;
+
+    @Autowired(required = false)
+    private CaptchaService captchaService;
+
+    @Autowired
+    private CaptchaAttemptService captchaAttemptService;
+
+    @Autowired
+    private LoginAttemptService loginAttemptService;
+
+    @Autowired
+    private IpBanService ipBanService;
 
     @GetMapping("/me")
     public Result<Map<String, Object>> me(@RequestHeader(value = "token", required = false) String token) {
@@ -65,22 +86,75 @@ public class UserController {
         }
     }
     @PostMapping("/register")
-    public Result<String> register(@RequestBody @Validated UserRegisterDTO registerDTO) {
-        try {
-            userService.register(registerDTO);
-            return Result.success();
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
+    public Result<String> register(HttpServletRequest request, @RequestBody @Validated UserRegisterDTO registerDTO) {
+        if (captchaService == null) {
+            return Result.error("验证码服务不可用");
         }
+
+        String ip = request == null ? "UNKNOWN" : request.getRemoteAddr();
+        String key = ip + ":" + (registerDTO.getUsername() == null ? "" : registerDTO.getUsername());
+
+        // If already banned, block immediately
+        IpBanService.BanStatus banStatus = ipBanService.getBanStatus(ip);
+        if (banStatus.banned()) {
+            String userId = "ANONYMOUS";
+            String secId = SecurityUtil.generateSecID(BAN_RISK_NAME, userId);
+            String details = "BANNED，请停止不当行为，剩余时间：" + banStatus.remainingSeconds() + "秒";
+            throw new WafBlockedException(secId, userId, BAN_RISK_NAME, true, banStatus.remainingSeconds(), details);
+        }
+
+        boolean ok = captchaService.verify(registerDTO.getCaptchaId(), registerDTO.getCaptchaAnswer());
+        if (!ok) {
+            int failCount = captchaAttemptService.incrementAndGet(key);
+            if (failCount >= 3) {
+                ipBanService.banIp(ip);
+                IpBanService.BanStatus after = ipBanService.getBanStatus(ip);
+                String userId = "ANONYMOUS";
+                String secId = SecurityUtil.generateSecID(BAN_RISK_NAME, userId);
+                // optional audit log
+                SecurityUtil.logSecurityEvent(secId, "{\"riskName\":\"" + BAN_RISK_NAME + "\",\"userId\":\"" + userId + "\",\"details\":\"captcha failed 3 times\",\"ip\":\"" + ip + "\"}");
+                String details = "BANNED，请停止不当行为，剩余时间：" + after.remainingSeconds() + "秒";
+                throw new WafBlockedException(secId, userId, BAN_RISK_NAME, true, after.remainingSeconds(), details);
+            }
+            return Result.error("验证码错误（" + failCount + "/3）");
+        }
+
+        captchaAttemptService.reset(key);
+        userService.register(registerDTO);
+        return Result.success();
     }
 
     @PostMapping("/login")
-    public Result<String> login(@RequestBody @Validated UserLoginDTO loginDTO) {
+    public Object login(HttpServletRequest request, @RequestBody @Validated UserLoginDTO loginDTO) {
+        String ip = request == null ? "UNKNOWN" : request.getRemoteAddr();
+        String username = loginDTO == null ? "" : (loginDTO.getUsername() == null ? "" : loginDTO.getUsername());
+        String key = ip + ":" + username;
+
+        IpBanService.BanStatus banStatus = ipBanService.getBanStatus(ip);
+        if (banStatus.banned()) {
+            String userId = "ANONYMOUS";
+            String secId = SecurityUtil.generateSecID(BAN_RISK_NAME, userId);
+            String details = "BANNED，请停止不当行为，剩余时间：" + banStatus.remainingSeconds() + "秒";
+            throw new WafBlockedException(secId, userId, BAN_RISK_NAME, true, banStatus.remainingSeconds(), details);
+        }
+
         try {
             String token = userService.login(loginDTO);
+            loginAttemptService.reset(key);
             return Result.success(token);
         } catch (Exception e) {
-            return Result.error(e.getMessage());
+            int failCount = loginAttemptService.incrementAndGet(key);
+            if (failCount >= 5) {
+                ipBanService.banIp(ip);
+                IpBanService.BanStatus after = ipBanService.getBanStatus(ip);
+                String userId = "ANONYMOUS";
+                String secId = SecurityUtil.generateSecID(BAN_RISK_NAME, userId);
+                SecurityUtil.logSecurityEvent(secId, "{\"riskName\":\"" + BAN_RISK_NAME + "\",\"userId\":\"" + userId + "\",\"details\":\"login failed 5 times\",\"ip\":\"" + ip + "\"}");
+                String details = "BANNED，请停止不当行为，剩余时间：" + after.remainingSeconds() + "秒";
+                throw new WafBlockedException(secId, userId, BAN_RISK_NAME, true, after.remainingSeconds(), details);
+            }
+            // keep generic message but show attempt count to user
+            return Result.error("用户名或密码错误（" + failCount + "/5）");
         }
     }
 

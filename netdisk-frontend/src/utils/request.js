@@ -50,7 +50,10 @@ request.interceptors.response.use(
           query: {
             secId: wafData.secId,
             userId: wafData.userId,
-            riskName: wafData.riskName
+            riskName: wafData.riskName,
+            banned: wafData.banned,
+            remainSeconds: wafData.remainSeconds,
+            details: wafData.details
           }
         })
 

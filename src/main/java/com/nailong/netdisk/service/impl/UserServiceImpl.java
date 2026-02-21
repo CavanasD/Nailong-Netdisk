@@ -48,6 +48,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Autowired
     private RolePermissionMapper rolePermissionMapper;
 
+
     // 构造器注入 Redis Template
     public UserServiceImpl(@Autowired(required = false) StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
