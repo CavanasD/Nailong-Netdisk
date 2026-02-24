@@ -37,6 +37,7 @@
             </el-form-item>
 
             <el-form-item prop="captchaAnswer">
+              <!-- 测试用验证码答案 114514 -->
               <div class="captcha-row">
                 <div class="captcha-img" @click="refreshCaptcha" :title="captchaLoading ? '加载中…' : '点击刷新验证码'">
                   <img v-if="captchaUrl" :src="captchaUrl" alt="captcha" />

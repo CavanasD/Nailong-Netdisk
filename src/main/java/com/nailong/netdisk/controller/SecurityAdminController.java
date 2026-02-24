@@ -35,7 +35,7 @@ public class SecurityAdminController {
 
         List<Map<String, Object>> logs = new ArrayList<>();
         try (BufferedReader br = new BufferedReader(new FileReader("waf_events.log"))) {
-            String line;
+            String line; 
             while ((line = br.readLine()) != null) {
                 // Parse line: Timestamp [SEC_EVENT] ID:xxx Content:xxx
                 if (line.contains("ID:")) {

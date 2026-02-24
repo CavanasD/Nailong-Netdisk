@@ -19,6 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -27,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -36,6 +38,9 @@ import java.util.stream.Collectors;
 public class FileController {
 
     private static final long DEFAULT_QUOTA_BYTES = 200L * 1024 * 1024;
+
+    @Value("${security.vuln-mode:false}")
+    private boolean vulnMode;
 
     private final UserService userService;
     private final StoredFileService storedFileService;
@@ -132,14 +137,31 @@ public class FileController {
                                              HttpServletRequest request,
                                              @RequestHeader(value = "token", required = false) String token,
                                              @RequestParam(value = "token", required = false) String tokenQuery) {
-        String effectiveToken = StringUtils.hasText(token) ? token : tokenQuery;
-        Long userId = requireUserId(effectiveToken);
-
         StoredFile storedFile = storedFileService.getById(fileId);
-        if (storedFile == null || !userId.equals(storedFile.getUserId())) {
+        if (storedFile == null) {
             return ResponseEntity.status(404).build();
         }
 
+        String share = request.getParameter("share");
+        if (vulnMode && StringUtils.hasText(share)) {
+            String expected = Base64.getUrlEncoder().encodeToString(
+                    (storedFile.getId() + ":" + storedFile.getUserId()).getBytes(StandardCharsets.UTF_8));
+            if (share.equals(expected)) {
+                return buildDownloadResponse(storedFile);
+            }
+        }
+
+        String effectiveToken = StringUtils.hasText(token) ? token : tokenQuery;
+        Long userId = requireUserId(effectiveToken);
+
+        if (!userId.equals(storedFile.getUserId())) {
+            return ResponseEntity.status(404).build();
+        }
+
+        return buildDownloadResponse(storedFile);
+    }
+
+    private ResponseEntity<Resource> buildDownloadResponse(StoredFile storedFile) {
         Path path = Paths.get(storedFile.getStoragePath());
         if (!Files.exists(path)) {
             return ResponseEntity.status(404).build();
