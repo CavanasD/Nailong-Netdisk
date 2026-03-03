@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class IpBanService {
 
     private static final long FAIL_WINDOW_MS = 5L * 60 * 1000;
-    private static final long BAN_MS = 5L * 60 * 1000;
+    private static final long BAN_MS = 30L * 1000;
     private static final int FAIL_THRESHOLD = 3;
 
     private static final class Counter {
@@ -55,7 +55,7 @@ public class IpBanService {
     public int recordCaptchaFailure(String ip, String username) {
         String key = key(ip, username);
         long now = System.currentTimeMillis();
-
+        
         Counter updated = captchaFailCounters.compute(key, (k, v) -> {
             if (v == null) {
                 return new Counter(now, 1);
@@ -87,6 +87,13 @@ public class IpBanService {
         bannedUntilByIp.put(ip, System.currentTimeMillis() + BAN_MS);
     }
 
+    public void clearBan(String ip) {
+        if (ip == null || ip.isBlank()) {
+            return;
+        }
+        bannedUntilByIp.remove(ip);
+    }
+
     private String key(String ip, String username) {
         return Objects.toString(ip, "") + "|" + Objects.toString(username, "");
     }
@@ -100,4 +107,5 @@ public class IpBanService {
             return new BanStatus(false, 0);
         }
     }
+    
 }

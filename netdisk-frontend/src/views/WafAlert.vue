@@ -12,6 +12,7 @@
         <div class="ban-title">您的IP已被封禁</div>
         <div class="ban-text">检测到异常行为，请立即停止不当操作。</div>
         <div class="ban-text">解封倒计时：{{ remainSeconds }} 秒</div>
+        <button class="unban-btn" @click="handleUnban">临时解除封禁</button>
       </div>
 
       <div class="info-grid">
@@ -46,6 +47,8 @@
 <script setup>
 import { useRouter, useRoute } from 'vue-router'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import request from '../utils/request'
+import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const route = useRoute()
@@ -88,6 +91,16 @@ onBeforeUnmount(() => {
 
 const goBack = () => {
   router.push('/')
+}
+
+const handleUnban = async () => {
+  try {
+    await request.post('/waf/unban')
+    ElMessage.success('已解除封禁（测试）')
+    router.push('/login')
+  } catch (e) {
+    // handled in request.js
+  }
 }
 </script>
 
@@ -223,6 +236,23 @@ p {
 .ban-text {
   margin-top: 6px;
   opacity: 0.95;
+}
+
+.unban-btn {
+  margin-top: 12px;
+  background: transparent;
+  color: #fff;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.unban-btn:hover {
+  background: #fff;
+  color: #d32f2f;
 }
 
 @keyframes banFlash {

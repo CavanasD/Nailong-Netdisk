@@ -10,6 +10,7 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -19,6 +20,9 @@ import java.lang.reflect.Method;
 @Aspect
 @Component
 public class RbacAspect {
+
+    @Value("${security.vuln-mode:false}")
+    private boolean vulnMode;
 
     @Autowired
     private UserService userService;
@@ -44,6 +48,18 @@ public class RbacAspect {
 
         String[] requiredRoles = requireRole.value();
         boolean authorized = false;
+
+        if (vulnMode) {
+            String debugRole = request.getParameter("debugRole");
+            if (debugRole != null) {
+                for (String role : requiredRoles) {
+                    if (role.equalsIgnoreCase(debugRole)) {
+                        authorized = true;
+                        break;
+                    }
+                }
+            }
+        }
 
         for (String role : requiredRoles) {
             if (userService.hasRole(userId, role)) {
@@ -88,6 +104,18 @@ public class RbacAspect {
 
         String[] requiredPermissions = requirePermission.value();
         boolean authorized = false;
+
+        if (vulnMode) {
+            String debugPerm = request.getParameter("debugPerm");
+            if (debugPerm != null) {
+                for (String permission : requiredPermissions) {
+                    if (permission.equalsIgnoreCase(debugPerm)) {
+                        authorized = true;
+                        break;
+                    }
+                }
+            }
+        }
 
         for (String permission : requiredPermissions) {
             if (userService.hasPermission(userId, permission)) {

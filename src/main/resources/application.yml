@@ -25,6 +25,9 @@ spring:
       port: 6379
       database: 0
 
+security:
+  vuln-mode: true
+
 # MyBatis-Plus ??
 mybatis-plus:
   configuration:
