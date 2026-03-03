@@ -8,7 +8,6 @@ import com.nailong.netdisk.entity.User;
 import com.nailong.netdisk.mapper.UserMapper;
 import com.nailong.netdisk.service.StoredFileService;
 import com.nailong.netdisk.service.UserService;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -16,6 +15,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -36,6 +36,8 @@ import java.util.stream.Collectors;
 public class FileController {
 
     private static final long DEFAULT_QUOTA_BYTES = 200L * 1024 * 1024;
+    private static final int TRASH_RETAIN_DAYS = 30;
+    private static final Path BASE_UPLOAD_DIR = Paths.get("uploaded_files").toAbsolutePath().normalize();
 
     private final UserService userService;
     private final StoredFileService storedFileService;
@@ -92,11 +94,16 @@ public class FileController {
 
         String storedName = UUID.randomUUID() + ext;
 
-        Path baseDir = Paths.get("uploaded_files");
-        Path userDir = baseDir.resolve(String.valueOf(userId));
+        Path userDir = resolveUserDir(userId);
+        if (userDir == null) {
+            return Result.error("非法用户路径");
+        }
         Files.createDirectories(userDir);
 
-        Path target = userDir.resolve(storedName);
+        Path target = userDir.resolve(storedName).normalize();
+        if (!target.startsWith(userDir)) {
+            return Result.error("非法文件路径");
+        }
         Files.copy(file.getInputStream(), target);
 
         StoredFile storedFile = new StoredFile();
@@ -107,6 +114,7 @@ public class FileController {
         storedFile.setSize(size);
         storedFile.setStoragePath(target.toAbsolutePath().toString());
         storedFile.setCreateTime(LocalDateTime.now());
+        storedFile.setTrashed(0);
 
         storedFileService.save(storedFile);
 
@@ -122,26 +130,111 @@ public class FileController {
 
         List<StoredFile> files = storedFileService.list(new LambdaQueryWrapper<StoredFile>()
                 .eq(StoredFile::getUserId, userId)
+                .eq(StoredFile::getTrashed, 0)
                 .orderByDesc(StoredFile::getCreateTime));
 
         return Result.success(files.stream().map(this::toDto).collect(Collectors.toList()));
     }
 
+    @GetMapping("/trash")
+    public Result<List<FileInfoDTO>> listTrash(@RequestHeader(value = "token", required = false) String token) {
+        Long userId = requireUserId(token);
+
+        List<StoredFile> files = storedFileService.list(new LambdaQueryWrapper<StoredFile>()
+                .eq(StoredFile::getUserId, userId)
+                .eq(StoredFile::getTrashed, 1)
+                .orderByDesc(StoredFile::getTrashTime));
+
+        return Result.success(files.stream().map(this::toDto).collect(Collectors.toList()));
+    }
+
+    @DeleteMapping("/{fileId}")
+    @Transactional
+    public Result<String> moveToTrash(@PathVariable("fileId") Long fileId,
+                                      @RequestHeader(value = "token", required = false) String token) {
+        Long userId = requireUserId(token);
+        StoredFile file = requireOwnedFile(fileId, userId);
+
+        if (file.getTrashed() != null && file.getTrashed() == 1) {
+            return Result.success("文件已在回收站");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        file.setTrashed(1);
+        file.setTrashTime(now);
+        file.setExpireTime(now.plusDays(TRASH_RETAIN_DAYS));
+        file.setTrashedBy(userId);
+        storedFileService.updateById(file);
+
+        return Result.success("已移入回收站");
+    }
+
+    @PostMapping("/restore/{fileId}")
+    @Transactional
+    public Result<String> restore(@PathVariable("fileId") Long fileId,
+                                  @RequestHeader(value = "token", required = false) String token) {
+        Long userId = requireUserId(token);
+        StoredFile file = requireOwnedFile(fileId, userId);
+
+        if (file.getTrashed() == null || file.getTrashed() == 0) {
+            return Result.success("文件不在回收站");
+        }
+        if (file.getExpireTime() != null && file.getExpireTime().isBefore(LocalDateTime.now())) {
+            return Result.error("文件已过期，无法恢复，请彻底删除");
+        }
+
+        file.setTrashed(0);
+        file.setTrashTime(null);
+        file.setExpireTime(null);
+        file.setTrashedBy(null);
+        storedFileService.updateById(file);
+
+        return Result.success("恢复成功");
+    }
+
+    @DeleteMapping("/{fileId}/purge")
+    @Transactional
+    public Result<String> purge(@PathVariable("fileId") Long fileId,
+                                @RequestHeader(value = "token", required = false) String token) {
+        Long userId = requireUserId(token);
+        StoredFile file = requireOwnedFile(fileId, userId);
+
+        if (file.getTrashed() == null || file.getTrashed() == 0) {
+            return Result.error("请先将文件移入回收站");
+        }
+
+        Path path = safeResolveStoredPath(file.getStoragePath());
+        if (path == null) {
+            return Result.error("非法文件路径");
+        }
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException e) {
+            return Result.error("删除物理文件失败：" + e.getMessage());
+        }
+
+        storedFileService.removeById(file.getId());
+
+        long fileSize = file.getSize() == null ? 0L : file.getSize();
+        jdbcTemplate.update("UPDATE sys_user SET storage_used = GREATEST(COALESCE(storage_used,0) - ?, 0) WHERE user_id = ?", fileSize, userId);
+
+        return Result.success("彻底删除成功");
+    }
+
     @GetMapping("/download/{fileId}")
     public ResponseEntity<Resource> download(@PathVariable("fileId") Long fileId,
-                                             HttpServletRequest request,
                                              @RequestHeader(value = "token", required = false) String token,
                                              @RequestParam(value = "token", required = false) String tokenQuery) {
         String effectiveToken = StringUtils.hasText(token) ? token : tokenQuery;
         Long userId = requireUserId(effectiveToken);
 
         StoredFile storedFile = storedFileService.getById(fileId);
-        if (storedFile == null || !userId.equals(storedFile.getUserId())) {
+        if (storedFile == null || !userId.equals(storedFile.getUserId()) || (storedFile.getTrashed() != null && storedFile.getTrashed() == 1)) {
             return ResponseEntity.status(404).build();
         }
 
-        Path path = Paths.get(storedFile.getStoragePath());
-        if (!Files.exists(path)) {
+        Path path = safeResolveStoredPath(storedFile.getStoragePath());
+        if (path == null || !Files.exists(path)) {
             return ResponseEntity.status(404).build();
         }
 
@@ -160,6 +253,14 @@ public class FileController {
                 .contentType(mediaType)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
                 .body(new FileSystemResource(path));
+    }
+
+    private StoredFile requireOwnedFile(Long fileId, Long userId) {
+        StoredFile file = storedFileService.getById(fileId);
+        if (file == null || !userId.equals(file.getUserId())) {
+            throw new RuntimeException("文件不存在或无权限");
+        }
+        return file;
     }
 
     private Long requireUserId(String token) {
@@ -184,6 +285,9 @@ public class FileController {
         dto.setContentType(file.getContentType());
         dto.setSize(file.getSize());
         dto.setCreateTime(file.getCreateTime());
+        dto.setTrashed(file.getTrashed());
+        dto.setTrashTime(file.getTrashTime());
+        dto.setExpireTime(file.getExpireTime());
         return dto;
     }
 
@@ -195,5 +299,31 @@ public class FileController {
         if (mb < 1024) return String.format("%.1fMB", mb);
         double gb = mb / 1024.0;
         return String.format("%.2fGB", gb);
+    }
+
+    private Path resolveUserDir(Long userId) {
+        if (userId == null || userId <= 0) {
+            return null;
+        }
+        String userFolder = String.valueOf(userId);
+        if (!userFolder.matches("\\d+")) {
+            return null;
+        }
+        Path userDir = BASE_UPLOAD_DIR.resolve(userFolder).normalize();
+        if (!userDir.startsWith(BASE_UPLOAD_DIR)) {
+            return null;
+        }
+        return userDir;
+    }
+
+    private Path safeResolveStoredPath(String storedPath) {
+        if (!StringUtils.hasText(storedPath)) {
+            return null;
+        }
+        Path path = Paths.get(storedPath).toAbsolutePath().normalize();
+        if (!path.startsWith(BASE_UPLOAD_DIR)) {
+            return null;
+        }
+        return path;
     }
 }

@@ -19,6 +19,7 @@ public class FileSchemaPatcher implements CommandLineRunner {
     public void run(String... args) {
         patchUserQuotaColumns();
         createFileTable();
+        patchRecycleColumns();
     }
 
     private void patchUserQuotaColumns() {
@@ -58,7 +59,50 @@ public class FileSchemaPatcher implements CommandLineRunner {
                 "size BIGINT NOT NULL," +
                 "storage_path VARCHAR(500) NOT NULL," +
                 "create_time DATETIME NOT NULL," +
-                "INDEX idx_sys_file_user_time (user_id, create_time)" +
+                "trashed TINYINT NOT NULL DEFAULT 0," +
+                "trash_time DATETIME NULL," +
+                "expire_time DATETIME NULL," +
+                "trashed_by BIGINT NULL," +
+                "INDEX idx_sys_file_user_time (user_id, create_time)," +
+                "INDEX idx_sys_file_user_trashed (user_id, trashed)," +
+                "INDEX idx_sys_file_expire_time (expire_time)" +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    }
+
+    private void patchRecycleColumns() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE sys_file ADD COLUMN trashed TINYINT NOT NULL DEFAULT 0");
+        } catch (Exception ignored) {
+        }
+
+        try {
+            jdbcTemplate.execute("ALTER TABLE sys_file ADD COLUMN trash_time DATETIME NULL");
+        } catch (Exception ignored) {
+        }
+
+        try {
+            jdbcTemplate.execute("ALTER TABLE sys_file ADD COLUMN expire_time DATETIME NULL");
+        } catch (Exception ignored) {
+        }
+
+        try {
+            jdbcTemplate.execute("ALTER TABLE sys_file ADD COLUMN trashed_by BIGINT NULL");
+        } catch (Exception ignored) {
+        }
+
+        try {
+            jdbcTemplate.execute("CREATE INDEX idx_sys_file_user_trashed ON sys_file (user_id, trashed)");
+        } catch (Exception ignored) {
+        }
+
+        try {
+            jdbcTemplate.execute("CREATE INDEX idx_sys_file_expire_time ON sys_file (expire_time)");
+        } catch (Exception ignored) {
+        }
+
+        try {
+            jdbcTemplate.update("UPDATE sys_file SET trashed = 0 WHERE trashed IS NULL");
+        } catch (Exception ignored) {
+        }
     }
 }

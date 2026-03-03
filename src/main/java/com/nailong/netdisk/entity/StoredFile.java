@@ -26,4 +26,12 @@ public class StoredFile {
     private String storagePath;
 
     private LocalDateTime createTime;
+
+    private Integer trashed;
+
+    private LocalDateTime trashTime;
+
+    private LocalDateTime expireTime;
+
+    private Long trashedBy;
 }

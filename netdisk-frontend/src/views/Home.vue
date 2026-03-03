@@ -19,6 +19,10 @@
           <span class="dot" />
           我的文件
         </button>
+        <button class="menu-item" :class="{ active: active === 'trash' }" @click="active = 'trash'">
+          <span class="dot" />
+          回收站
+        </button>
         <button class="menu-item" :class="{ active: active === 'profile' }" @click="active = 'profile'">
           <span class="dot" />
           个人设置
@@ -159,9 +163,39 @@
                 <template #default="scope">{{ formatBytes(scope.row.size) }}</template>
               </el-table-column>
               <el-table-column prop="createTime" label="上传时间" width="190" />
-              <el-table-column label="操作" width="120">
+              <el-table-column label="操作" width="210">
                 <template #default="scope">
                   <el-button size="small" type="primary" plain @click="download(scope.row)">下载</el-button>
+                  <el-button size="small" type="danger" plain @click="moveToTrash(scope.row)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </section>
+
+        <!-- Trash -->
+        <section v-else-if="active === 'trash'" key="trash" class="panel">
+          <div class="card wide">
+            <div class="card-title">回收站</div>
+            <div class="actions" style="margin-bottom: 12px;">
+              <el-button @click="fetchTrashFiles">刷新回收站</el-button>
+            </div>
+            <el-table :data="trashFiles" style="width: 100%" stripe>
+              <el-table-column prop="id" label="#" width="90" />
+              <el-table-column prop="originalName" label="文件名" show-overflow-tooltip />
+              <el-table-column prop="size" label="大小" width="120">
+                <template #default="scope">{{ formatBytes(scope.row.size) }}</template>
+              </el-table-column>
+              <el-table-column prop="trashTime" label="删除时间" width="190">
+                <template #default="scope">{{ formatTime(scope.row.trashTime) }}</template>
+              </el-table-column>
+              <el-table-column prop="expireTime" label="过期时间" width="190">
+                <template #default="scope">{{ formatTime(scope.row.expireTime) }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="210">
+                <template #default="scope">
+                  <el-button size="small" type="success" plain @click="restoreFile(scope.row)">恢复</el-button>
+                  <el-button size="small" type="danger" plain @click="purgeFile(scope.row)">彻底删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -231,7 +265,7 @@
 import { useRouter } from 'vue-router'
 import { ref, onMounted, watch, computed, nextTick, onBeforeUnmount } from 'vue'
 import request from '../utils/request'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Camera } from '@element-plus/icons-vue'
 import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
@@ -243,6 +277,7 @@ const searchUsername = ref('')
 const searchResults = ref([])
 const active = ref('dashboard')
 const myFiles = ref([])
+const trashFiles = ref([])
 
 const storageUsed = ref(0)
 const storageQuota = ref(200 * 1024 * 1024)
@@ -261,6 +296,7 @@ const updateTitle = () => {
     active.value === 'dashboard' ? '仪表盘' :
     active.value === 'upload' ? '上传文件' :
     active.value === 'files' ? '我的文件' :
+    active.value === 'trash' ? '回收站' :
     '个人设置'
 }
 
@@ -290,9 +326,19 @@ const fetchMyFiles = async () => {
   }
 }
 
+const fetchTrashFiles = async () => {
+  try {
+    const res = await request.get('/file/trash')
+    trashFiles.value = res.data || []
+  } catch (e) {
+    console.error('获取回收站失败', e)
+  }
+}
+
 const refreshAll = async () => {
   await fetchUser()
   await fetchMyFiles()
+  await fetchTrashFiles()
 }
 
 onMounted(async () => {
@@ -410,6 +456,49 @@ const logout = () => {
 
 const goToAdmin = () => {
   router.push('/admin')
+}
+
+const moveToTrash = async (file) => {
+  try {
+    await ElMessageBox.confirm(`确认将 ${file.originalName} 移入回收站吗？`, '删除确认', {
+      confirmButtonText: '确认',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await request.delete(`/file/${file.id}`)
+    ElMessage.success('已移入回收站')
+    await refreshAll()
+    recomputeQuota()
+  } catch (e) {
+    // cancel or API error handled by interceptor
+  }
+}
+
+const restoreFile = async (file) => {
+  try {
+    await request.post(`/file/restore/${file.id}`)
+    ElMessage.success('恢复成功')
+    await refreshAll()
+    recomputeQuota()
+  } catch (e) {
+    // handled in request.js
+  }
+}
+
+const purgeFile = async (file) => {
+  try {
+    await ElMessageBox.confirm(`将彻底删除 ${file.originalName}，不可恢复，继续吗？`, '高风险操作', {
+      confirmButtonText: '彻底删除',
+      cancelButtonText: '取消',
+      type: 'error'
+    })
+    await request.delete(`/file/${file.id}/purge`)
+    ElMessage.success('彻底删除成功')
+    await refreshAll()
+    recomputeQuota()
+  } catch (e) {
+    // cancel or API error handled by interceptor
+  }
 }
 
 watch(active, () => updateTitle())

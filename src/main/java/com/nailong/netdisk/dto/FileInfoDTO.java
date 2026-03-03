@@ -11,4 +11,7 @@ public class FileInfoDTO {
     private String contentType;
     private Long size;
     private LocalDateTime createTime;
+    private Integer trashed;
+    private LocalDateTime trashTime;
+    private LocalDateTime expireTime;
 }
