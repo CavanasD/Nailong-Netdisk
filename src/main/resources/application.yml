@@ -28,6 +28,13 @@ spring:
 security:
   vuln-mode: true
 
+bridge:
+  cfms:
+    enabled: false
+    host: 127.0.0.1
+    port: 5104
+    connect-timeout: 2000
+
 # MyBatis-Plus ??
 mybatis-plus:
   configuration:
